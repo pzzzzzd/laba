@@ -3,29 +3,58 @@ autonumber
 
 actor Покупатель as Buyer
 participant Приложение_WB as App
-participant Сервер_WB as WB
-participant Терминал_Почты as Terminal
-participant Система_Белпочты as Почта
 
+box "Внутренний контур Wildberries" #LightBlue
+    participant "API-шлюз\n(API Gateway)" as API
+    participant "Бэкенд-сервис\n(Backend)" as Backend
+    database "База данных\n(DB)" as DB
+end box
+
+box "Инфраструктура РУП Белпочта" #LightYellow
+    participant "Терминал_Почты" as Terminal
+    participant "Система_Белпочты" as Почта
+end box
+
+== Подготовка кода в ПВЗ Белпочты ==
 Buyer -> App: Открыть штрихкод доставки
-App -> WB: Запрос кода выдачи
-WB --> App: Сгенерированный OTP / QR-код
+App -> API: GET /api/v1/delivery/otp-code
+API -> Backend: Запрос генерации OTP/QR-кода
+Backend -> DB: Запись/Обновление OTP для заказа
+DB --> Backend: Подтверждение записи
+Backend --> API: Сгенерированный OTP / QR-код
+API --> App: Передача кода выдачи
 App --> Buyer: Отображение кода на экране
 
+== Процесс идентификации и выдачи ==
 Buyer -> Terminal: Показать QR-код оператору (или ввести номер)
 Terminal -> Почта: Запрос проверки посылки
-Почта -> WB: Проверить статус оплаты и OTP-код
-WB --> Почта: Ответ: [Оплачено, Готово к выдаче, Код верный]
+Почта -> API: POST /api/v1/integration/belpochta/verify
+API -> Backend: Проверка статуса оплаты и OTP-кода
+
+Backend -> DB: SELECT статус, otp_code FROM orders WHERE id = ?
+DB --> Backend: Результат: [Оплачен, Готово к выдаче, OTP_hash]
+
+Backend -> Backend: Валидация OTP-кода (Проверка соответствия)
 
 alt Все данные верны
+    Backend --> API: Ответ: [Успешно: Оплачено, Готово к выдаче]
+    API --> Почта: Ответ: [Код верный, статус OK]
+    
     Почта -> Почта: Списать посылку из системы
     Почта --> Terminal: Разрешить выдачу (Показать полку)
     Terminal --> Buyer: Оператор выдает посылку покупателю
     Terminal -> Почта: Отметить как "Выдано"
-    Почта -> WB: Уведомление: Клиент забрал товар
-    WB -> WB: Сменить статус на "Доставлено"
+    
+    Почта -> API: POST /api/v1/integration/belpochta/delivered
+    API -> Backend: Фиксация факта успешной выдачи
+    Backend -> DB: UPDATE orders SET status = 'Доставлено'
+    DB --> Backend: Подтверждение обновления
+    Backend --> API: Статус обновлен
+    API --> Почта: HTTP 200 OK (Уведомление принято)
+    
 else Ошибка (Код неверный / Заказ уже выдан)
-    WB --> Почта: Ответ: [Ошибка валидации]
+    Backend --> API: Ошибка валидации / неверный статус
+    API --> Почта: Ответ: [Ошибка авторизации заказа]
     Почта --> Terminal: Доступ запрещен (Причина ошибки)
     Terminal --> Buyer: Экран: "Ошибка! Код недействителен"
 end
