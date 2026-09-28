@@ -1,0 +1,34 @@
+@startuml
+autonumber
+
+actor Покупатель as Buyer
+participant Фронтенд as Front
+participant Бэкенд as Backend
+participant Склад_WMS as WMS
+participant Биллинг as Billing
+
+Buyer -> Front: Открыть личный кабинет
+Front -> Backend: Запрос активных заказов
+Backend --> Front: Список заказов
+Front --> Buyer: Показ заказов (Кнопка "Отменить" активна)
+
+Buyer -> Front: Нажать "Отменить заказ"
+Front -> Backend: Запрос на отмену заказа
+
+Backend -> WMS: Проверить статус сборки
+WMS --> Backend: Статус заказа
+
+alt Заказ еще НЕ собран
+    Backend -> WMS: Заблокировать сборку заказа
+    WMS --> Backend: Подтверждение блокировки
+    Backend -> Billing: Инициировать возврат (ЕРИП/Карта)
+    Billing --> Backend: Средства возвращены
+    Backend -> Backend: Изменить статус на "Отменен"
+    Backend --> Front: Успешная отмена
+    Front --> Buyer: Показ сообщения: "Заказ отменен, деньги возвращаются"
+else Заказ УЖЕ в сборке / отправлен
+    WMS --> Backend: Отказ (Товар на конвейере)
+    Backend --> Front: Ошибка отмены (Заказ собран)
+    Front --> Buyer: Сообщение: "Отмена невозможна. Обратитесь в поддержку"
+end
+@enduml
