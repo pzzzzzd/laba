@@ -1,0 +1,81 @@
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+
+' Определение акторов
+actor "Покупатель" as Buyer
+actor "Продавец" as Seller
+actor "Курьер WB" as Courier
+actor "Администратор WB" as Admin
+
+' Внешние белорусские системы и сервисы
+actor "Система ЕРИП" as ERIP <<Service>>
+actor "Белпочта" as Belpochta <<Service>>
+actor "Банк-эквайер (БЕЛКАРТ/Visa/MC)" as MintBank <<Service>>
+
+' Иерархия акторов (Отношения обобщения)
+Seller --|> Buyer
+Admin --|> Buyer
+
+rectangle "Wildberries Belarus Marketplace" {
+    
+    ' Блок авторизации и профиля
+    usecase "Авторизоваться по номеру (+375)" as Auth
+    Buyer -- Auth
+    
+    ' Блок поиска и фильтрации
+    usecase "Поиск товаров" as Search
+    usecase "Фильтрация по белорусским поставщикам" as FilterBY
+    Buyer -- Search
+    Search .> FilterBY : <<extend>>
+    
+    ' Блок заказа и оплаты
+    usecase "Оформить заказ" as Order
+    usecase "Оплатить заказ" as Pay
+    Buyer -- Order
+    Order .> Pay : <<include>>
+    
+    ' Варианты оплаты (национальная специфика)
+    usecase "Оплата через ЕРИП" as PayERIP
+    usecase "Оплата картой BY-банка / БЕЛКАРТ" as PayCard
+    PayERIP --|> Pay
+    PayCard --|> Pay
+    
+    ' Связь оплат с внешними сервисами
+    PayERIP -- ERIP
+    PayCard -- MintBank
+    
+    ' Блок логистики и доставки
+    usecase "Выбрать способ доставки" as Shipment
+    usecase "Доставка в ПВЗ Wildberries" as WBPVZ
+    usecase "Доставка через Белпочту" as PostBY
+    usecase "Курьерская доставка на дом" as HomeDelivery
+    
+    Order .> Shipment : <<include>>
+    WBPVZ --|> Shipment
+    PostBY --|> Shipment
+    HomeDelivery --|> Shipment
+    
+    ' Взаимодействие доставки с акторами
+    PostBY -- Belpochta
+    Courier -- HomeDelivery
+    
+    ' Функционал Продавца (Селлера)
+    usecase "Управление каталогом товаров" as ManageCatalog
+    usecase "Маркировка товаров в системе Электронный знак" as ESign
+    usecase "Просмотр аналитики продаж в BYN" as Analytics
+    
+    Seller -- ManageCatalog
+    Seller -- Analytics
+    ManageCatalog .> ESign : <<include>>
+    
+    ' Функционал Администратора
+    usecase "Модерация карточек товаров" as Moderate
+    usecase "Разрешение споров и рекламаций" as Disputes
+    usecase "Контроль цен по Постановлению №713" as PriceControl
+    
+    Admin -- Moderate
+    Admin -- Disputes
+    Admin -- PriceControl
+}
+@enduml

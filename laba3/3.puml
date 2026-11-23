@@ -1,0 +1,117 @@
+@startuml
+!theme plain
+skinparam backgroundColor white
+skinparam handwritten false
+skinparam roundcorner 5
+skinparam componentStyle uml2
+
+' Настройка стилей для Yandex Cloud и внешних систем
+skinparam rectangle {
+    BackgroundColor<<YandexCloud>> #F4F5F7
+    BorderColor<<YandexCloud>> #848896
+}
+skinparam database {
+    BackgroundColor #E2F0D9
+    BorderColor #385723
+}
+
+title Диаграмма компонентов: WB Беларусь в Yandex Cloud (Интеграция с Белпочтой)
+
+' ==========================================
+' КЛИЕНТСКИЙ УРОВЕНЬ (CLIENTS)
+' ==========================================
+package "Клиентские приложения" {
+    [Веб-приложение\n(Браузер / Фронтенд)] as WebApp <<Component>>
+    [Мобильное приложение\n(iOS / Android)] as MobileApp <<Component>>
+}
+
+' ==========================================
+' ИНФРАСТРУКТУРА YANDEX CLOUD
+' ==========================================
+rectangle "Yandex Cloud Infrastructure" <<YandexCloud>> {
+
+    ' Группа управления API и шлюзами
+    package "API Management & Gateway" {
+        [Yandex API Gateway] as APIGateway <<Service>>
+        note right of APIGateway
+            - Маршрутизация запросов
+            - Аутентификация / Авторизация
+            - Регулирование нагрузки (Throttling)
+        end note
+    }
+
+    ' Группа сервисов бизнес-логики
+    package "Сервисы бизнес-логики (Yandex Container Apps)" {
+        [Сервис заказов] as OrderService <<Component>>
+        [Сервис платежей] as PaymentService <<Component>>
+        [Сервис выдачи заказов] as DeliveryService <<Component>>
+    }
+
+    ' Группа систем хранения данных (Managed Databases)
+    package "Системы хранения данных (Yandex Managed Services)" {
+        database "Yandex Managed Serverless DB\n(Данные о заказах)" as DBOrders
+        database "Yandex Managed Service for Redis\n(Кэш данных)" as CacheRedis
+        database "Yandex Object Storage\n(Статические ресурсы)" as ObjStorage
+    }
+}
+
+' ==========================================
+' ВНЕШНИЕ СИСТЕМЫ (EXTERNAL SYSTEMS)
+' ==========================================
+package "Внешняя инфраструктура РУП 'Белпочта'" #FFF2CC {
+    [Терминал / АРМ\nОператора Белпочты] as PostTerminal <<Component>>
+    
+    interface "Интерфейс Белпочты" as PostAPI
+    [Внутренняя система\nБелпочты] as PostSystem <<System>>
+    
+    PostAPI - PostSystem
+}
+
+' ==========================================
+' СВЯЗИ И ВЗАИМОДЕЙСТВИЯ (ПОТОКИ ДАННЫХ)
+' ==========================================
+
+' 1. Взаимодействие клиентов с бэкендом через единую точку входа
+WebApp --> APIGateway : HTTPS / REST
+MobileApp --> APIGateway : HTTPS / REST
+
+' Маршрутизация шлюза к микросервисам
+APIGateway --> OrderService : Маршрутизация
+APIGateway --> DeliveryService : Маршрутизация (Внешние запросы от Белпочты)
+
+' Доступ к статике напрямую
+WebApp --> ObjStorage : Загрузка статики
+
+' 2. Взаимодействие сервисов бизнес-логики с хранилищами
+OrderService --> DBOrders : Read/Write (Статусы заказов)
+OrderService --> CacheRedis : Read (Быстрый доступ)
+
+' 3. СЦЕНАРИЙ 1: Отмена заказа и возврат средств
+note top of OrderService
+  **Сценарий 1: Отмена заказа**
+  1. Проверка статуса в DBOrders
+  2. Вызов PaymentService для возврата денег
+end note
+OrderService .> PaymentService : [HTTP/gRPC] Инициировать возврат средств
+PaymentService --> DBOrders : Обновить платежный статус
+
+' 4. СЦЕНАРИЙ 2: Получение заказа в ПВЗ Белпочты
+PostTerminal --> APIGateway : [HTTPS/TLS] Запрос проверки кода / подтверждения выдачи
+note on link
+  **Сценарий 2: Выдача через Белпочту**
+  Безопасное соединение через
+  API Gateway маркетплейса
+end note
+
+APIGateway --> DeliveryService : Перенаправление запроса терминала
+DeliveryService --> DBOrders : Проверить легитимность & состав заказа
+
+' Интеграция сервиса выдачи с шиной Белпочты для синхронизации статусов
+DeliveryService --> PostAPI : [REST API] Синхронизация статусов / Подтверждение получения
+note bottom of PostAPI
+  **Критическая интеграция:**
+  - Проверка статуса посылки
+  - Фиксация факта выдачи клиенту
+end note
+
+@enduml
